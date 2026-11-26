@@ -122,7 +122,7 @@ export const FOODS = [
   F('patilla', 'frutas', '🍉', 'Patilla (sandía)', '1 taza (150 g)', 46, 0.9, 11.5, 0.2, 'sandia'),
   F('melon', 'frutas', '🍈', 'Melón', '1 taza (160 g)', 54, 1.3, 13, 0.3, ''),
   F('pera', 'frutas', '🍐', 'Pera', '1 mediana (178 g)', 101, 0.6, 27, 0.3, ''),
-  F('aguacate', 'frutas', '🥑', 'Aguacate', '¼ de uno grande (70 g)', 112, 1.4, 6, 10.3, 'palta'),
+  F('aguacate', 'frutas', '🥑', 'Aguacate', '2 tajadas (70 g)', 112, 1.4, 6, 10.3, 'palta'),
   F('moras', 'frutas', '🫐', 'Moras', '1 taza (145 g)', 62, 2, 14, 0.7, 'mora'),
   F('granadilla', 'frutas', '🟠', 'Granadilla', '1 unidad', 55, 1.3, 12, 0.4, ''),
   F('maracuya', 'frutas', '🟣', 'Maracuyá (pulpa)', '1 unidad (30 g)', 29, 0.7, 7, 0.2, ''),

@@ -103,7 +103,7 @@ async function geminiModels(key) {
   return list;
 }
 
-async function gemini({ key, model, preferred, image, prompt }) {
+async function gemini({ key, model, preferred, image, prompt, system = SYSTEM }) {
   let candidates;
   if (model) candidates = [model];
   else {
@@ -115,7 +115,7 @@ async function gemini({ key, model, preferred, image, prompt }) {
   if (image) parts.push({ inlineData: { mimeType: 'image/jpeg', data: image.split(',')[1] } });
   parts.push({ text: prompt });
   const body = JSON.stringify({
-    systemInstruction: { parts: [{ text: SYSTEM }] },
+    systemInstruction: { parts: [{ text: system }] },
     contents: [{ role: 'user', parts }],
     generationConfig: { temperature: 0.2, responseMimeType: 'application/json', maxOutputTokens: 8192 },
   });
@@ -143,7 +143,7 @@ async function gemini({ key, model, preferred, image, prompt }) {
 }
 
 // ── Claude ────────────────────────────────────────────────────────────
-async function claude({ key, model, image, prompt, maxTokens = 1500 }) {
+async function claude({ key, model, image, prompt, maxTokens = 1500, system = SYSTEM }) {
   const content = [];
   if (image) content.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: image.split(',')[1] } });
   content.push({ type: 'text', text: prompt });
@@ -158,7 +158,7 @@ async function claude({ key, model, image, prompt, maxTokens = 1500 }) {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
       },
-      body: JSON.stringify({ model: m, max_tokens: maxTokens, system: SYSTEM, messages: [{ role: 'user', content }] }),
+      body: JSON.stringify({ model: m, max_tokens: maxTokens, system, messages: [{ role: 'user', content }] }),
     },
     'claude'
   );
@@ -224,6 +224,34 @@ export async function analyzeFood({ provider, key, model, preferred, image, text
     : `Esto fue lo que comí (${meal}): ${text}`;
   const out = provider === 'claude' ? await claude({ key, model, image, prompt }) : await gemini({ key, model, preferred, image, prompt });
   return { ...normalizeResult(extractJSON(out.text)), model: out.model };
+}
+
+const IDEAS_SYSTEM = `Eres un nutricionista colombiano. Propón comidas reales, sabrosas y fáciles de conseguir en Colombia (en casa, en un corrientazo o en una cafetería) que encajen en las calorías y la proteína pedidas. Usa porciones concretas (tazas, unidades o gramos) y valores nutricionales realistas.
+Responde SOLO con JSON válido, sin texto adicional ni bloques de código:
+{"opciones":[{"titulo":"nombre corto del plato","items":[{"nombre":"Arroz blanco","porcion":"1 taza (160 g)","kcal":208,"proteina_g":4.3,"carbohidratos_g":45,"grasa_g":0.5}]}]}`;
+
+export async function suggestMealsAI({ provider, key, model, preferred, meal, kcal, protein, eaten }) {
+  if (!key) throw new AIError('Falta tu clave de IA. Agrégala en Ajustes.');
+  const prompt = `Dame 3 opciones distintas de ${meal} de unas ${kcal} kcal cada una (±10 %), con al menos ${protein} g de proteína.${eaten ? ` Hoy ya comí: ${eaten}. Evita repetir lo mismo.` : ''}`;
+  const out =
+    provider === 'claude'
+      ? await claude({ key, model, prompt, system: IDEAS_SYSTEM, maxTokens: 2500 })
+      : await gemini({ key, model, preferred, prompt, system: IDEAS_SYSTEM });
+  const obj = extractJSON(out.text);
+  const raw = Array.isArray(obj) ? obj : obj?.opciones || obj?.options || [];
+  const options = raw
+    .map((o) => {
+      const { items } = normalizeResult({ items: o?.items || o?.alimentos || [] });
+      return {
+        title: String(o?.titulo ?? o?.title ?? 'Opción').slice(0, 60),
+        items,
+        kcal: items.reduce((s, x) => s + x.k, 0),
+        p: items.reduce((s, x) => s + x.p, 0),
+      };
+    })
+    .filter((o) => o.items.length)
+    .slice(0, 3);
+  return { options, model: out.model };
 }
 
 export async function testAI({ provider, key, model }) {

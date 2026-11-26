@@ -1,5 +1,5 @@
 // Kcal · service worker: la app abre sin internet (la IA sí necesita conexión)
-const VERSION = 'kcal-v1.0.0';
+const VERSION = 'kcal-v1.1.0';
 const ASSETS = [
   './',
   './index.html',
@@ -9,6 +9,7 @@ const ASSETS = [
   './js/charts.js',
   './js/foods.js',
   './js/game.js',
+  './js/ideas.js',
   './js/mascot.js',
   './js/nutrition.js',
   './js/util.js',

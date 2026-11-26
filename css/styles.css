@@ -185,6 +185,22 @@ details[open] summary { margin-bottom: 8px; }
 .bar.goal { height: 12px; margin: 12px 0 6px; }
 .bar.goal > i { background: linear-gradient(90deg, var(--ok), #6bcb8b); }
 
+/* ── ¿Qué como? ─────────────────────────────── */
+.ideas .card-head { margin-bottom: 6px; }
+.idea-txt { margin: 10px 0; }
+.idea-list { display: grid; gap: 8px; }
+.idea { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 10px 10px 12px; border-radius: 16px; background: var(--surface-2); text-align: left; }
+.idea:active { transform: scale(0.99); }
+.idea-e { font-size: 19px; flex: none; min-width: 58px; letter-spacing: -1px; }
+.idea-t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.idea-t b { font-size: 15px; font-weight: 700; }
+.idea-t small { color: var(--muted); font-size: 12.5px; }
+.chev { color: var(--muted); flex: none; display: grid; }
+.idea-actions .btn { min-height: 42px; font-size: 14.5px; }
+.idea-loading { margin-top: 10px; font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.idea-loading .dots { margin: 0; }
+.idea-title { font-size: 19px; }
+
 /* ── Agua ───────────────────────────────────── */
 .glasses { display: flex; flex-wrap: wrap; gap: 6px; }
 .glass { width: 28px; height: 36px; padding: 0; }

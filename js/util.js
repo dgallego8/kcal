@@ -66,3 +66,40 @@ export const fmtIn = (n) => {
   const v = Math.round((Number(n) || 0) * 10) / 10;
   return String(v).replace('.', ',');
 };
+
+// "1 taza (160 g)" × 0,5 → "½ taza (80 g)"; "2 huevos" × 1,5 → "3 huevos"
+const FRACV = { '½': 0.5, '¼': 0.25, '¾': 0.75 };
+const pluralize = (w) => {
+  const m = w.match(/^([a-záéíóúñ]+)(.*)$/i);
+  if (!m) return w;
+  let [, base, rest] = m;
+  if (/s$/i.test(base)) return w;
+  if (/ón$/i.test(base)) base = base.replace(/ón$/i, 'ones');
+  else if (/[aeiouáéíóú]$/i.test(base)) base += 's';
+  else if (/z$/i.test(base)) base = `${base.slice(0, -1)}ces`;
+  else base += 'es';
+  return base + rest;
+};
+const singularize = (w) => {
+  const m = w.match(/^([a-záéíóúñ]+)(.*)$/i);
+  if (!m) return w;
+  let [, base, rest] = m;
+  if (/dades$/i.test(base)) base = base.replace(/des$/i, 'd');
+  else if (/ones$/i.test(base)) base = base.replace(/ones$/i, 'ón');
+  else if (/s$/i.test(base)) base = base.slice(0, -1);
+  return base + rest;
+};
+export function scalePortion(u, q) {
+  if (Math.abs(q - 1) < 1e-9) return u;
+  const m = String(u).match(/^(\d+(?:[.,]\d+)?|½|¼|¾)\s+(.*)$/);
+  if (!m) return `${fmtQty(q)} × ${u}`;
+  const n0 = FRACV[m[1]] ?? Number(m[1].replace(',', '.'));
+  const n = Math.round(n0 * q * 100) / 100;
+  let rest = m[2].replace(/\((\d+(?:[.,]\d+)?)\s*(g|ml)\b([^)]*)\)/, (_, v, unit, tail) => `(${fmt(Number(v.replace(',', '.')) * q)} ${unit}${tail})`);
+  const [first, ...others] = rest.split(' ');
+  if (first !== 'de') {
+    if (n > 1 && n0 <= 1) rest = [pluralize(first), ...others].join(' ');
+    else if (n <= 1 && n0 > 1) rest = [singularize(first), ...others].join(' ');
+  }
+  return `${fmtQty(n)} ${rest}`;
+}

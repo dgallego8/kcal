@@ -3,14 +3,15 @@ import { POPULAR, foodById, searchFoods, localEstimate, emojiFor } from './foods
 import { ACTIVITY, PACES, computePlan, bmi, bmiLabel, healthyRange, eta, trend } from './nutrition.js';
 import { mascotSVG, ACCESSORIES } from './mascot.js';
 import { ring, weightChart, barChart } from './charts.js';
-import { PROVIDERS, analyzeFood, testAI, compressImage } from './ai.js';
+import { PROVIDERS, analyzeFood, suggestMealsAI, testAI, compressImage } from './ai.js';
+import { SHARE, suggestIdeas } from './ideas.js';
 import { computeGame, petState, CHEERS } from './game.js';
 import {
   todayKey, addDays, dayNumber, fmt, fmt1, fmtIn, fmtQty, cap, fmtDateLong, fmtDateShort, fmtDateFull,
-  weekdayShort, esc, uid, parseNum, clamp,
+  weekdayShort, esc, uid, parseNum, clamp, scalePortion,
 } from './util.js';
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 const STORE_KEY = 'kcal:v1';
 
 const MEALS = [
@@ -93,7 +94,13 @@ function save(now = false) {
 }
 
 const newDraft = () => ({ name: '', sex: 'hombre', age: '', height: '', weight: '', activity: 'ligero', goal: '', pace: 0.5 });
-const ui = { tab: 'hoy', day: todayKey(), onToday: true, ob: { step: 0, d: newDraft(), err: '' } };
+const ui = {
+  tab: 'hoy',
+  day: todayKey(),
+  onToday: true,
+  ob: { step: 0, d: newDraft(), err: '' },
+  ideas: { meal: null, seed: 0, ai: {}, loading: false, error: '' },
+};
 let sheet = null;
 let G = null; // juego calculado en cada render
 
@@ -301,6 +308,7 @@ function viewHoy() {
     </div>
   </section>
 
+  ${isToday ? ideasCard() : ''}
   ${waterCard(t, g)}
   ${MEALS.map((m) => mealCard(k, m)).join('')}
   <p class="foot">Valores aproximados. Kcal no reemplaza la asesoría de un profesional de la salud.</p>`;
@@ -329,7 +337,7 @@ function waterCard(t, g) {
 
 function entryLabel(e) {
   const q = e.q ?? 1;
-  return q === 1 ? esc(e.u) : `${fmtQty(q)} × ${esc(e.u)}`;
+  return esc(scalePortion(e.u, q));
 }
 
 function mealCard(k, m) {
@@ -348,6 +356,119 @@ function mealCard(k, m) {
       <button class="add-mini" data-action="add" data-meal="${m.id}" aria-label="Agregar a ${m.label}">${ICON.plus}</button></div>
     ${items.length ? `<div class="entries">${rows}</div>` : `<button class="empty-meal" data-action="add" data-meal="${m.id}">Agregar ${m.label.toLowerCase()}</button>`}
   </section>`;
+}
+
+// ───────────── ¿Qué como? ─────────────
+let ideaReg = [];
+function nextMeal(d = new Date()) {
+  const h = d.getHours() + d.getMinutes() / 60;
+  if (h >= 22.5 || h < 4.5) return { meal: 'desayuno', tomorrow: true };
+  if (h < 10.75) return { meal: 'desayuno', tomorrow: false };
+  if (h < 15.5) return { meal: 'almuerzo', tomorrow: false };
+  if (h < 18) return { meal: 'snack', tomorrow: false };
+  return { meal: 'cena', tomorrow: false };
+}
+const MEAL_ORDER = ['desayuno', 'almuerzo', 'snack', 'cena'];
+function ideaTarget() {
+  if (ui.ideas.meal) return { meal: ui.ideas.meal, tomorrow: false };
+  const nm = nextMeal();
+  if (nm.tomorrow) return nm;
+  // Si ya registraste esa comida, pasa a la siguiente que falte
+  const logged = new Set(dayOf(todayKey()).entries.map((e) => e.meal));
+  const order = MEAL_ORDER.slice(MEAL_ORDER.indexOf(nm.meal));
+  return { meal: order.find((m) => !logged.has(m)) || nm.meal, tomorrow: false };
+}
+
+// Calorías y proteína para una comida, según lo que ya comiste hoy
+function mealBudget(meal, tomorrow) {
+  const k = todayKey();
+  const g = goalsFor(k);
+  const base = { kcal: g.kcal * SHARE[meal], p: g.protein * SHARE[meal], light: false };
+  if (tomorrow) return base;
+  const t = totals(k);
+  const entries = dayOf(k).entries;
+  const logged = new Set(entries.map((e) => e.meal));
+  const inMeal = entries
+    .filter((e) => e.meal === meal)
+    .reduce((acc, e) => {
+      const v = vals(e);
+      return { k: acc.k + v.k, p: acc.p + v.p };
+    }, { k: 0, p: 0 });
+  // Comidas pendientes: las que aún no registras (si se te olvidó una, no se reparte su parte)
+  const S = MEALS.filter((m) => m.id === meal || !logged.has(m.id)).reduce((sum, m) => sum + SHARE[m.id], 0);
+  let kcal = ((g.kcal - (t.kcal - inMeal.k)) * SHARE[meal]) / S - inMeal.k;
+  const p = Math.max(10, ((g.protein - (t.p - inMeal.p)) * SHARE[meal]) / S - inMeal.p);
+  const dayLeft = g.kcal - t.kcal;
+  const light = kcal < 150;
+  kcal = clamp(kcal, 150, base.kcal * 1.3);
+  return { kcal, p, light, covered: light && inMeal.k > 0 && dayLeft >= 150 };
+}
+
+function ideasCard() {
+  const { meal, tomorrow } = ideaTarget();
+  const b = mealBudget(meal, tomorrow);
+  const aiOpts = ui.ideas.ai[meal];
+  const opts = aiOpts || suggestIdeas({ meal, kcal: b.kcal, protein: b.p, seed: dayNumber(todayKey()) + ui.ideas.seed });
+  ideaReg = opts.map((o) => ({ ...o, meal, tomorrow }));
+  const label = mealLabel(meal).toLowerCase();
+  const txt = tomorrow
+    ? `Para tu desayuno de mañana: unas <b>${fmt(b.kcal)} kcal</b> con <b>${fmt(b.p)} g</b> de proteína.`
+    : b.covered
+      ? `Ya registraste tu ${label}. Si quieres algo más, que sea liviano:`
+      : b.light
+        ? 'Ya casi llegas a tu meta de hoy. Si te da hambre, algo liviano:'
+      : `Para tu ${label} te quedan unas <b>${fmt(b.kcal)} kcal</b> y <b>${fmt(b.p)} g</b> de proteína.`;
+  const list = opts
+    .map(
+      (o, i) => `<button class="idea" data-action="idea-open" data-i="${i}">
+        <span class="idea-e">${o.items.slice(0, 4).map((x) => x.e || '🍽️').join('')}</span>
+        <span class="idea-t"><b>${esc(o.title)}</b><small>${fmt(o.kcal)} kcal · ${fmt(o.p)} g de proteína${aiOpts ? ' · ✨ IA' : ''}</small></span>
+        <span class="chev">${ICON.right}</span></button>`
+    )
+    .join('');
+  return `<section class="card ideas">
+    <div class="card-head"><h3>🍽️ ¿Qué como?</h3></div>
+    <div class="chips">${MEALS.map((m) => `<button class="chip ${m.id === meal ? 'on' : ''}" data-action="ideas-meal" data-meal="${m.id}">${m.e} ${m.label}</button>`).join('')}</div>
+    <p class="muted small idea-txt">${txt}</p>
+    <div class="idea-list">${list || '<p class="muted small">No tengo ideas para esto todavía.</p>'}</div>
+    ${ui.ideas.loading ? '<p class="idea-loading">✨ Pensando ideas… <span class="dots"><i></i><i></i><i></i></span></p>' : ''}
+    ${ui.ideas.error ? errBox(ui.ideas.error) : ''}
+    <div class="row idea-actions"><button class="btn ghost" data-action="ideas-more">↻ Otras ideas</button>${aiReady() ? '<button class="btn ghost" data-action="ideas-ai">✨ Ideas con IA</button>' : ''}</div>
+  </section>`;
+}
+
+async function runIdeasAI() {
+  if (ui.ideas.loading) return;
+  const { meal, tomorrow } = ideaTarget();
+  const b = mealBudget(meal, tomorrow);
+  const ai = aiCfg();
+  const provider = ai.provider;
+  ui.ideas.loading = true;
+  ui.ideas.error = '';
+  render(true);
+  try {
+    const eaten = tomorrow ? '' : dayOf(todayKey()).entries.slice(-8).map((e) => e.n).join(', ');
+    const res = await suggestMealsAI({
+      provider,
+      key: ai.keys[provider],
+      model: ai.model[provider] || '',
+      preferred: ai.resolved[provider] || '',
+      meal: mealLabel(meal).toLowerCase(),
+      kcal: Math.round(b.kcal),
+      protein: Math.round(b.p),
+      eaten,
+    });
+    if (res.model && !ai.model[provider] && ai.resolved[provider] !== res.model) {
+      ai.resolved[provider] = res.model;
+      save();
+    }
+    if (!res.options.length) throw new Error('La IA no devolvió ideas. Intenta de nuevo.');
+    ui.ideas.ai[meal] = res.options.map((o) => ({ ...o, items: o.items.map((x) => ({ ...x, e: emojiFor(x.n) })) }));
+  } catch (err) {
+    ui.ideas.error = err.message || 'No se pudieron generar ideas.';
+  }
+  ui.ideas.loading = false;
+  if (ui.tab === 'hoy') render(true);
 }
 
 // ───────────── Progreso ─────────────
@@ -753,6 +874,8 @@ function sheetAdd() {
   const head = `<div class="sheet-head"><h2>Agregar comida${dayTxt}</h2><button class="icon-btn" data-action="close-sheet" aria-label="Cerrar">${ICON.close}</button></div>
     <div class="chips">${MEALS.map((m) => `<button class="chip ${m.id === s.meal ? 'on' : ''}" data-action="set-meal" data-meal="${m.id}">${m.e} ${m.label}</button>`).join('')}</div>`;
   if (s.picked) return head + qtyView('add');
+  if (s.mode === 'idea')
+    return `${head}<h3 class="idea-title">${esc(s.title)}</h3>${s.viewOnly ? '<p class="muted small">Es para mañana: regístrala cuando la comas.</p>' : ''}${resultsAI()}`;
   const seg = `<div class="seg">${MODES.map(([id, e, l]) => `<button class="${s.mode === id ? 'on' : ''}" data-action="mode" data-mode="${id}"><span>${e}</span>${l}</button>`).join('')}</div>`;
   let body = '';
   if (s.loading) body = loadingHTML(s.mode === 'foto' ? 'Mirando tu plato…' : 'Calculando…');
@@ -919,9 +1042,9 @@ function resultsAI() {
   ${s.comment ? `<div class="bubble small">🐾 ${esc(s.comment)}</div>` : ''}
   <div class="ai-items">${list}</div>
   ${miss}
-  <p class="muted small">Revisa y corrige lo que no cuadre.${s.conf ? ` Confianza de la IA: ${esc(s.conf)}.` : ''}${s.src === 'local' ? ' Estimado con la base de alimentos (sin IA).' : ''}</p>
-  <button class="btn primary big" data-action="ai-add" id="ai-add">${aiAddLabel()}</button>
-  <button class="btn ghost" data-action="ai-reset">Empezar de nuevo</button>`;
+  <p class="muted small">${s.src === 'idea' ? 'Ajusta las porciones o quita lo que no vayas a comer.' : `Revisa y corrige lo que no cuadre.${s.conf ? ` Confianza de la IA: ${esc(s.conf)}.` : ''}${s.src === 'local' ? ' Estimado con la base de alimentos (sin IA).' : ''}`}</p>
+  ${s.viewOnly ? '' : `<button class="btn primary big" data-action="ai-add" id="ai-add">${aiAddLabel()}</button>`}
+  ${s.src === 'idea' ? '' : '<button class="btn ghost" data-action="ai-reset">Empezar de nuevo</button>'}`;
 }
 
 function aiAddLabel() {
@@ -981,7 +1104,7 @@ function runLocal() {
     .filter((r) => r.food)
     .map((r) => ({
       n: r.food.n,
-      u: r.q === 1 ? r.food.u : `${fmtQty(r.q)} × ${r.food.u}`,
+      u: scalePortion(r.food.u, r.q),
       k: Math.round(r.food.k * r.q),
       p: Math.round(r.food.p * r.q * 10) / 10,
       c: Math.round(r.food.c * r.q * 10) / 10,
@@ -1011,7 +1134,7 @@ function addAIItems() {
       c: Number(it.c) || 0,
       f: Number(it.f) || 0,
       e: it.e || '🍽️',
-      src: s.src === 'local' ? 'base' : 'ia',
+      src: s.src === 'ia' ? 'ia' : s.src === 'idea' ? 'idea' : 'base',
     });
     total += Number(it.k) || 0;
   }
@@ -1225,6 +1348,26 @@ const actions = {
     ui.day = todayKey();
     ui.ob = { step: 0, d: newDraft(), err: '' };
     render();
+  },
+  'ideas-meal': (el) => {
+    ui.ideas.meal = el.dataset.meal;
+    ui.ideas.error = '';
+    render(true);
+  },
+  'ideas-more': () => {
+    delete ui.ideas.ai[ideaTarget().meal];
+    ui.ideas.seed++;
+    ui.ideas.error = '';
+    render(true);
+  },
+  'ideas-ai': runIdeasAI,
+  'idea-open': (el) => {
+    const o = ideaReg[Number(el.dataset.i)];
+    if (!o) return;
+    openSheet({
+      kind: 'add', meal: o.meal, mode: 'idea', src: 'idea', title: o.title, viewOnly: o.tomorrow,
+      items: o.items.map((x) => ({ ...x })), query: '', text: '', note: '', image: null, loading: false, error: '',
+    });
   },
   'ob-next': obNext,
   'ob-back': () => {

@@ -8,6 +8,7 @@ App web para contar calorías y bajar de peso, al estilo de apps como BitePal. R
 
 - 📸 **Foto o descripción → calorías y macros con IA.** Funciona con Google Gemini (gratis con tu propia clave) o con Claude.
 - 🔎 **Base de ~190 alimentos y platos colombianos:** arepas, bandeja paisa, ajiaco, tinto, empanadas, corrientazo…
+- 🍽️ **¿Qué como?:** ideas de desayuno, almuerzo, cena y mecato con comida colombiana que encajan en las calorías y la proteína que te quedan. Con la IA activa, también pide ideas nuevas a la IA.
 - ✍️ **Describir sin IA:** "2 arepas con queso y un tinto" se calcula también con la base de alimentos.
 - ⚡ **Registro rápido** y alimentos propios que quedan guardados para buscarlos después.
 - 🎯 **Meta diaria** de calorías, proteína, carbohidratos y grasa que se recalcula cada vez que registras tu peso.
@@ -31,6 +32,10 @@ App web para contar calorías y bajar de peso, al estilo de apps como BitePal. R
 El plan gratis tiene un límite diario de solicitudes (lo ves en AI Studio). La app elige sola el modelo Flash disponible y, si se acaba la cuota de uno, prueba con otro. En el plan gratis Google puede usar lo que envías para mejorar sus productos, así que no subas fotos con datos personales.
 
 También puedes usar **Claude**: crea una clave de API en la consola de Anthropic (es de pago, se cobra por uso) y elige "Claude" en Ajustes.
+
+## Recordatorios
+
+Una app web en el iPhone no puede poner widgets ni programar avisos por su cuenta, así que los recordatorios se hacen con la app **Recordatorios** del iPhone: uno diario por comida (con las calorías de esa comida y una idea), dos de agua y uno los lunes para pesarte.
 
 ## Cómo calcula tu meta
 
@@ -57,6 +62,7 @@ js/foods.js           base de alimentos, búsqueda y estimación por texto
 js/nutrition.js       cálculo de metas
 js/ai.js              conexión con Gemini y Claude
 js/game.js            XP, rachas, logros y mensajes de la mascota
+js/ideas.js           ideas de comidas según tus calorías
 js/mascot.js          dibujo de Chigüi (SVG)
 js/charts.js          gráficas
 sw.js                 modo sin internet
